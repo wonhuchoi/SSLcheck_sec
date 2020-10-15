@@ -29,6 +29,11 @@ void init_ssl() {
   SSL_library_init();
 }
 
+void cleanup(SSL_CTX* ctx, BIO* bio) {
+  SSL_CTX_free(ctx);
+  BIO_free_all(bio);
+}
+
 void *read_user_input(void *arg) {
   printf("\nhere\n");
   SSL *ssl = arg;
@@ -57,33 +62,52 @@ void secure_connect(const char* hostname, const char *port) {
   char buf[BUFFER_SIZE];
 
   /* TODO Establish SSL context and connection */
-  const SSL_METHOD* ssl_method = TLSv1_2_client_method();
-  SSL_CTX* ctx = SSL_CTX_new(ssl_method);
+  //const SSL_METHOD* ssl_method = TLSv1_2_client_method();
+  const SSL_METHOD* ssl_method = TLS_client_method();
+
+  SSL_CTX* ctx = NULL;
+  ctx = SSL_CTX_new(ssl_method);
+
   SSL* ssl = NULL;
-  X509 *certificate;
-  BIO* bio = BIO_new_ssl_connect(ctx);
-  BIO_get_ssl(bio, &ssl);
-  certificate = SSL_get_peer_certificate(ssl);
-  BIO_set_conn_hostname(bio, hostname);
-  BIO_do_connect(bio);
+  
+  BIO *bio_in = NULL, *bio_out = NULL;
+  
+  bio_in = BIO_new_ssl_connect(ctx);
+  BIO_get_ssl(bio_in, &ssl);
+
+  BIO_set_conn_hostname(bio_in, hostname);
+  BIO_set_conn_port(bio_in, port);
+
+  BIO_do_connect(bio_in);
+  BIO_do_handshake(bio_in);
+
   /* TODO Print stats about connection */
   /* Create thread that will read data from stdin */
   pthread_t thread;
   pthread_create(&thread, NULL, read_user_input, ssl);
   pthread_detach(thread);
+
   size_t mk_len = 1;
   size_t num_copied = 0;
   unsigned char* mk = malloc(mk_len);
+
   SSL_SESSION* session = SSL_get_session(ssl);
-  do{
+
+  do {
     mk_len *= 2;
     mk = (char*)realloc(mk, mk_len);
     num_copied = SSL_SESSION_get_master_key(session, mk, mk_len);
-  } while(mk_len > num_copied);
+  } while (mk_len > num_copied);
   for (int i = 0; i < num_copied; i++)
   {
     printf("hello: %02X", mk[i]);
   }
+
+  X509 *cert;
+  cert = SSL_get_peer_certificate(ssl);
+
+  // print certificate
+
   fprintf(stderr, "\nType your message:\n\n");
 
   /* TODO Receive messages and print them to stdout */
