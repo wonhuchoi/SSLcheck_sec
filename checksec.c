@@ -138,7 +138,7 @@ void secure_connect(const char* hostname, const char *port) {
   }
 
   fprintf(stderr, "\n\n");
-  free(mk_nums);
+  free(mk_out);
 
   // trying to print the supported ciphers
 
