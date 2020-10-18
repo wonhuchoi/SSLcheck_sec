@@ -119,34 +119,28 @@ void secure_connect(const char* hostname, const char *port) {
   pthread_create(&thread, NULL, read_user_input, bio_in);
   pthread_detach(thread);
 
-  size_t mk_len = 1;
-  size_t num_copied = 0;
-  unsigned char* mk = malloc(mk_len);
-  int nk_nums = 0;
+  // size_t mk_len = 1;
+  // size_t num_copied = 0;
+  // unsigned char* mk = malloc(mk_len);
+  int mk_nums = 0;
   SSL_SESSION *session = SSL_get_session(ssl);
 
   // get session master key
-  unsigned char *mk_out = malloc(mk_len);
-  do{
-    mk_len *= 2;
-    mk = realloc(mk, mk_len);
-    nk_nums = SSL_SESSION_get_master_key(session, mk_out, mk_len);
-  }while(mk_len < nk_nums);
-  mk = realloc(mk, nk_nums);
-  SSL_SESSION_get_master_key(session, mk_out, mk_len);
-  fprintf(stderr, "%d\n", nk_nums);
+  unsigned char *mk_out = malloc(BUFFER_SIZE);  
+  mk_nums = SSL_SESSION_get_master_key(session, mk_out, BUFFER_SIZE);
+  // fprintf(stderr, "%d\n", mk_nums);
 
-  fprintf(stderr, "Master Key: \n");
+  fprintf(stderr, "Master Key:\n");
+
   int i;
-  for (i=0; i<nk_nums; i++) {
+  for (i=0; i < mk_nums; i++) {
     fprintf(stderr, "%02X", mk_out[i]);
   }
+
   fprintf(stderr, "\n\n");
+  free(mk_nums);
 
   // trying to print the supported ciphers
-
-  // SSL_CIPHER *curr_cipher = NULL;
-  // char *name;
 
   fprintf(stderr, "Supported cipher suites:\n");
   STACK_OF(SSL_CIPHER) *ciphers = SSL_get1_supported_ciphers(ssl);
@@ -192,8 +186,6 @@ void secure_connect(const char* hostname, const char *port) {
     fprintf(stderr, "Certificate Issuer: %s\n\n", line);
     OPENSSL_free(line);
 
-    //int pubkey_algonid = OBJ_obj2nid(cert->cert_info->key->algor->algorithm);
-
    EVP_PKEY * pubkey; 
     pubkey = X509_get_pubkey (cert);
     int key_type = EVP_PKEY_base_id(pubkey);
@@ -205,7 +197,6 @@ void secure_connect(const char* hostname, const char *port) {
       BIO_printf(bio_out, "Error writing public key data in PEM format");
     
     // EVP_PKEY_print_public(bio_out, pubkey, 0, NULL);
-  
 
     X509_free(cert);
     free(key_buf);
