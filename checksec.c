@@ -53,23 +53,26 @@ int convert_ASN1TIME(ASN1_TIME *t, char* buf, size_t len)
 }
 
 void *read_user_input(void *arg) {
-  SSL *ssl = arg;
-
+  // SSL *ssl = arg;
+  BIO* bio_in = arg;
   char buf[BUFFER_SIZE];
   size_t n;
   //printf("\nread_user_input\n");
-
   while (fgets(buf, sizeof(buf) - 1, stdin)) {
     /* Most text-based protocols use CRLF for line-termination. This
        code replaced a LF with a CRLF. */
     n = strlen(buf);
+    if(buf[n-1] == '\04'){
+      break;
+    }
     if (buf[n-1] == '\n' && (n == 1 || buf[n-2] != '\r'))
       strcpy(&buf[n-1], "\r\n");
     
     /* TODO Send message */
+    BIO_puts(bio_in, buf);
   }
   /* TODO EOF in stdin, shutdown the connection */
-  
+  exit(0);
   return 0;
 }
 
@@ -87,7 +90,7 @@ void secure_connect(const char* hostname, const char *port) {
 
   SSL* ssl = NULL;
   
-  BIO *bio_in = NULL, *bio_out = NULL;
+  BIO *bio_in = NULL, *bio_out = BIO_new_fp(stderr, BIO_NOCLOSE);
   
   bio_in = BIO_new_ssl_connect(ctx);
   if (NULL == bio_in) report_and_exit("Error at BIO_new_ssl_connect");
@@ -110,18 +113,24 @@ void secure_connect(const char* hostname, const char *port) {
   /* TODO Print stats about connection */
   /* Create thread that will read data from stdin */
   pthread_t thread;
-  pthread_create(&thread, NULL, read_user_input, ssl);
+  pthread_create(&thread, NULL, read_user_input, bio_in);
   pthread_detach(thread);
 
   size_t mk_len = 1;
   size_t num_copied = 0;
   unsigned char* mk = malloc(mk_len);
-
+  int nk_nums = 0;
   SSL_SESSION *session = SSL_get_session(ssl);
 
   // get session master key
-  unsigned char *mk_out[48];
-  int nk_nums = SSL_SESSION_get_master_key(session, mk_out, 48);
+  unsigned char *mk_out = malloc(mk_len);
+  do{
+    mk_len *= 2;
+    mk = realloc(mk, mk_len);
+    nk_nums = SSL_SESSION_get_master_key(session, mk_out, mk_len);
+  }while(mk_len < nk_nums);
+  mk = realloc(mk, nk_nums);
+  SSL_SESSION_get_master_key(session, mk_out, mk_len);
   fprintf(stderr, "%d\n", nk_nums);
 
   //fprintf(stderr, "Master Key: %s\n", mk_out);
@@ -183,30 +192,34 @@ void secure_connect(const char* hostname, const char *port) {
 
     //int pubkey_algonid = OBJ_obj2nid(cert->cert_info->key->algor->algorithm);
 
+   EVP_PKEY * pubkey; 
+    pubkey = X509_get_pubkey (cert);
+    int key_type = EVP_PKEY_base_id(pubkey);
+    unsigned char* key_buf = NULL;
+    char *pem = NULL;
+    // pem = (char *) malloc(bio_in->num_write + 1);
+    // PEM_write_bio_PUBKEY(bio_in, pubkey);
+    if(!PEM_write_bio_PUBKEY(bio_out, pubkey))
+      BIO_printf(bio_out, "Error writing public key data in PEM format");
+    
+    // EVP_PKEY_print_public(bio_out, pubkey, 0, NULL);
+  
+
     X509_free(cert);
+    free(key_buf);
   } else {
     fprintf(stderr, "Certificate version: NONE\n\n");
   }
 
-  // int version = ((int) X509_get_version(cert)) + 1;
-  // fprintf(stderr, "Certificate version: %d\n\n", version);
-
-  // do {
-  //   mk_len *= 2;
-  //   mk = (char*)realloc(mk, mk_len);
-  //   num_copied = SSL_SESSION_get_master_key(session, mk, mk_len);
-  // } while (mk_len > num_copied);
-  // for (int i = 0; i < num_copied; i++)
-  // {
-  //   printf("hello: %02X", mk[i]);
-  // }
-
   fprintf(stderr, "\nType your message:\n\n");
 
   /* TODO Receive messages and print them to stdout */
-  // while(buf) {
-    
-  // }
+  size_t len;
+  while(1) {
+    len = BIO_read(bio_in, buf, sizeof(buf));
+    if(len > 0)
+      BIO_write(bio_out, buf, len);
+  }
 }
 
 int main(int argc, char *argv[]) {
