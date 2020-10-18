@@ -134,51 +134,59 @@ void secure_connect(const char* hostname, const char *port) {
   fprintf(stderr, "\n\n");
 
   // trying to print the supported ciphers
-  // SSL_CIPHER *curr_cipher = NULL;
-  // fprintf(stderr, "Supported cipher suites:\n");
-  // STACK_OF(SSL_CIPHER) *ciphers = SSL_get1_supported_ciphers(ssl);
-  // for (i = 0; i < sk_SSL_CIPHER_num(ciphers); i++) {
-  //   curr_cipher = sk_SSL_CIPHER_value(ciphers, i);
-  //   fprintf(stderr, "%s\n", curr_cipher->name);
-  // }
 
-  char *curr_cipher_name = SSL_get_cipher_name(ssl);
-  fprintf(stderr, "Using cipher suite: %s\n", curr_cipher_name);
+  SSL_CIPHER *curr_cipher = NULL;
+  char *name;
 
+  fprintf(stderr, "Supported cipher suites:\n");
+  STACK_OF(SSL_CIPHER) *ciphers = SSL_get1_supported_ciphers(ssl);
+  
+  for (i = 0; i < sk_SSL_CIPHER_num(ciphers); i++) {
+    curr_cipher = sk_SSL_CIPHER_value(ciphers, i);
+    name = SSL_CIPHER_get_name(curr_cipher);
+    fprintf(stderr, "%s\n", name);
+  }
+
+  char *current_cipher_name = SSL_get_cipher_name(ssl);
+  fprintf(stderr, "Using cipher suite: %s\n\n", current_cipher_name);
 
   X509 *cert;
   char *line;
 
   cert = SSL_get_peer_certificate(ssl);
 
-  int version = ((int) X509_get_version(cert)) + 1;
-  fprintf(stderr, "Certificate version: %d\n", version);
+  if (cert != NULL) {
+    int version = ((int) X509_get_version(cert)) + 1;
+    fprintf(stderr, "Certificate version: %d\n", version);
 
-  fprintf(stderr, "Certificate verification: %s\n", "yes");
+    fprintf(stderr, "Certificate verification: %s\n", "yes");
 
-  ASN1_TIME *not_before = X509_get_notBefore(cert);
-  ASN1_TIME *not_after = X509_get_notAfter(cert);
+    ASN1_TIME *not_before = X509_get_notBefore(cert);
+    ASN1_TIME *not_after = X509_get_notAfter(cert);
 
-  char not_after_str[DATE_LEN];
-  convert_ASN1TIME(not_after, not_after_str, DATE_LEN);
+    char not_after_str[DATE_LEN];
+    convert_ASN1TIME(not_after, not_after_str, DATE_LEN);
 
-  char not_before_str[DATE_LEN];
-  convert_ASN1TIME(not_before, not_before_str, DATE_LEN);
+    char not_before_str[DATE_LEN];
+    convert_ASN1TIME(not_before, not_before_str, DATE_LEN);
 
-  fprintf(stderr, "Certificate start time: %s\n", not_before_str);
-  fprintf(stderr, "Certificate end time: %s\n", not_after_str);
+    fprintf(stderr, "Certificate start time: %s\n", not_before_str);
+    fprintf(stderr, "Certificate end time: %s\n\n", not_after_str);
 
-  line = X509_NAME_oneline(X509_get_subject_name(cert), NULL, 0);
-  fprintf(stderr, "Certificate Subject: %s\n", line);
-  OPENSSL_free(line);
+    line = X509_NAME_oneline(X509_get_subject_name(cert), NULL, 0);
+    fprintf(stderr, "Certificate Subject: %s\n", line);
+    OPENSSL_free(line);
 
-  line = X509_NAME_oneline(X509_get_issuer_name(cert), NULL, 0);
-  fprintf(stderr, "Certificate Issuer: %s\n", line);
-  OPENSSL_free(line);
+    line = X509_NAME_oneline(X509_get_issuer_name(cert), NULL, 0);
+    fprintf(stderr, "Certificate Issuer: %s\n\n", line);
+    OPENSSL_free(line);
 
-  int pubkey_algonid = OBJ_obj2nid(cert->cert_info->key->algor->algorithm);
+    //int pubkey_algonid = OBJ_obj2nid(cert->cert_info->key->algor->algorithm);
 
-  X509_free(cert);
+    X509_free(cert);
+  } else {
+    fprintf(stderr, "Certificate version: NONE\n\n");
+  }
 
   // int version = ((int) X509_get_version(cert)) + 1;
   // fprintf(stderr, "Certificate version: %d\n\n", version);
