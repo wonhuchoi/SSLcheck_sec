@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <signal.h>
 
 #include <openssl/bio.h> /* Basic Input/Output streams */
 #include <openssl/err.h> /* errors */
@@ -58,17 +59,23 @@ void *read_user_input(void *arg) {
   BIO* bio_in = arg;
   char buf[BUFFER_SIZE];
   size_t n;
+  SSL* ssl = NULL;
   while (fgets(buf, sizeof(buf) - 1, stdin)) {
     /* Most text-based protocols use CRLF for line-termination. This
        code replaced a LF with a CRLF. */
     n = strlen(buf);
+    BIO_get_ssl(bio_in, &ssl); 
     if(buf[n-1] == '\04'){
-      //break;
+      break;
     }
     if (buf[n-1] == '\n' && (n == 1 || buf[n-2] != '\r'))
       strcpy(&buf[n-1], "\r\n");
-    BIO_puts(bio_in, buf);
+    if(BIO_puts(bio_in, buf) <= 0) {
+      fprintf(stderr, "Error sending message to server");
+      break;
+    }
   }
+  
   exit(0);
   return 0;
 }
@@ -79,7 +86,6 @@ void secure_connect(const char* hostname, const char *port) {
 
   /* TODO Establish SSL context and connection */
   const SSL_METHOD* ssl_method = TLS_client_method();
-  //const SSL_METHOD* ssl_method = TLS_client_method();
 
   SSL_CTX* ctx = NULL;
   ctx = SSL_CTX_new(ssl_method);
@@ -142,7 +148,7 @@ void secure_connect(const char* hostname, const char *port) {
   STACK_OF(SSL_CIPHER) *ciphers = SSL_get1_supported_ciphers(ssl);
 
   for (i = 0; i < sk_SSL_CIPHER_num(ciphers); i++) {
-    SSL_CIPHER *curr_cipher = sk_SSL_CIPHER_value(ciphers, i);
+    const SSL_CIPHER *curr_cipher = sk_SSL_CIPHER_value(ciphers, i);
     const char *name = SSL_CIPHER_get_name(curr_cipher);
     fprintf(stderr, "%s\n", name);
   }
@@ -151,7 +157,6 @@ void secure_connect(const char* hostname, const char *port) {
   fprintf(stderr, "Using cipher suite: %s\n\n", current_cipher_name);
 
   X509 *cert;
-  char *line;
 
   cert = SSL_get_peer_certificate(ssl);
 
@@ -162,8 +167,8 @@ void secure_connect(const char* hostname, const char *port) {
     long verify_flag = SSL_get_verify_result(ssl);
     fprintf(stderr, "Certificate verification: %s\n", X509_verify_cert_error_string(verify_flag));
 
-    ASN1_TIME *not_before = X509_get0_notBefore(cert);
-    ASN1_TIME *not_after = X509_get0_notAfter(cert);
+    ASN1_TIME *not_before = X509_get_notBefore(cert);
+    ASN1_TIME *not_after = X509_get_notAfter(cert);
 
     char not_after_str[DATE_LEN];
     convert_ASN1TIME(not_after, not_after_str, DATE_LEN);
@@ -174,27 +179,40 @@ void secure_connect(const char* hostname, const char *port) {
     fprintf(stderr, "Certificate start time: %s\n", not_before_str);
     fprintf(stderr, "Certificate end time: %s\n\n", not_after_str);
 
-    line = X509_NAME_oneline(X509_get_subject_name(cert), NULL, 0);
-    fprintf(stderr, "Certificate Subject: %s\n", line);
-    OPENSSL_free(line);
+    char *cert_key_buf = malloc(BUFFER_SIZE);
 
-    line = X509_NAME_oneline(X509_get_issuer_name(cert), NULL, 0);
-    fprintf(stderr, "Certificate Issuer: %s\n\n", line);
-    OPENSSL_free(line);
+    X509_NAME *subj = X509_get_subject_name(cert);
+    fprintf(stderr, "Certificate Subject: \n");
+
+    for (int i = 0; i < X509_NAME_entry_count(subj); i++) {
+	    X509_NAME_ENTRY *e = X509_NAME_get_entry(subj, i);
+      OBJ_obj2txt(cert_key_buf, BUFFER_SIZE, X509_NAME_ENTRY_get_object(e), 0);
+	    const unsigned char *value = ASN1_STRING_get0_data(X509_NAME_ENTRY_get_data(e));
+      fprintf(stderr, "%s: %s\n", cert_key_buf, value);
+    }
+
+    fprintf(stderr, "\n");
+
+    X509_NAME *issu = X509_get_issuer_name(cert);
+    fprintf(stderr, "Certificate Issuer: \n");
+
+    for (int i = 0; i < X509_NAME_entry_count(issu); i++) {
+	    X509_NAME_ENTRY *e = X509_NAME_get_entry(issu, i);
+      OBJ_obj2txt(cert_key_buf, BUFFER_SIZE, X509_NAME_ENTRY_get_object(e), 0);
+	    const unsigned char *value = ASN1_STRING_get0_data(X509_NAME_ENTRY_get_data(e));
+      fprintf(stderr, "%s: %s\n", cert_key_buf, value);
+    }
+
+    fprintf(stderr, "\n");
+
+    free(cert_key_buf);
 
     EVP_PKEY * pubkey; 
     pubkey = X509_get_pubkey (cert);
-    if (pubkey == NULL) {
-      fprintf(stderr, "Error extracting public key from certificate\n\n", line);
-    }
-    int key_type = EVP_PKEY_base_id(pubkey);
-    unsigned char* key_buf = NULL;
     if(!PEM_write_bio_PUBKEY(bio_out, pubkey))
       BIO_printf(bio_out, "Error writing public key data in PEM format");
     
     X509_free(cert);
-    free(key_buf);
-    free(pubkey);
   } else {
     fprintf(stderr, "Certificate version: NONE\n\n");
   }
@@ -210,11 +228,18 @@ void secure_connect(const char* hostname, const char *port) {
   }
   free(bio_in);
   free(bio_out);
+  
+}
+
+void sigpipe_handler(int unused)
+{
+  perror("Connection was closed by server");
 }
 
 int main(int argc, char *argv[]) {
   init_ssl();
-  
+  // sigaction(SIGPIPE, (const struct siginfo_t *)report_and_exit, (void*)connection_closed_msg);
+  signal(SIGPIPE, sigpipe_handler);
   const char* hostname;
   const char* port = "443";
 
