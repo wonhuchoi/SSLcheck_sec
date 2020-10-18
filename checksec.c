@@ -146,7 +146,7 @@ void secure_connect(const char* hostname, const char *port) {
   STACK_OF(SSL_CIPHER) *ciphers = SSL_get1_supported_ciphers(ssl);
 
   for (i = 0; i < sk_SSL_CIPHER_num(ciphers); i++) {
-    SSL_CIPHER *curr_cipher = sk_SSL_CIPHER_value(ciphers, i);
+    const SSL_CIPHER *curr_cipher = sk_SSL_CIPHER_value(ciphers, i);
     const char *name = SSL_CIPHER_get_name(curr_cipher);
     fprintf(stderr, "%s\n", name);
   }
@@ -155,7 +155,6 @@ void secure_connect(const char* hostname, const char *port) {
   fprintf(stderr, "Using cipher suite: %s\n\n", current_cipher_name);
 
   X509 *cert;
-  char *line;
 
   cert = SSL_get_peer_certificate(ssl);
 
@@ -178,19 +177,39 @@ void secure_connect(const char* hostname, const char *port) {
     fprintf(stderr, "Certificate start time: %s\n", not_before_str);
     fprintf(stderr, "Certificate end time: %s\n\n", not_after_str);
 
-    line = X509_NAME_oneline(X509_get_subject_name(cert), NULL, 0);
-    fprintf(stderr, "Certificate Subject: %s\n", line);
-    OPENSSL_free(line);
+    char *cert_key_buf = malloc(BUFFER_SIZE);
 
-    line = X509_NAME_oneline(X509_get_issuer_name(cert), NULL, 0);
-    fprintf(stderr, "Certificate Issuer: %s\n\n", line);
-    OPENSSL_free(line);
+    X509_NAME *subj = X509_get_subject_name(cert);
+    fprintf(stderr, "Certificate Subject: \n");
 
-   EVP_PKEY * pubkey; 
+    for (int i = 0; i < X509_NAME_entry_count(subj); i++) {
+	    X509_NAME_ENTRY *e = X509_NAME_get_entry(subj, i);
+      OBJ_obj2txt(cert_key_buf, BUFFER_SIZE, X509_NAME_ENTRY_get_object(e), 0);
+	    const unsigned char *value = ASN1_STRING_get0_data(X509_NAME_ENTRY_get_data(e));
+      fprintf(stderr, "%s: %s\n", cert_key_buf, value);
+    }
+
+    fprintf(stderr, "\n");
+
+    X509_NAME *issu = X509_get_issuer_name(cert);
+    fprintf(stderr, "Certificate Issuer: \n");
+
+    for (int i = 0; i < X509_NAME_entry_count(issu); i++) {
+	    X509_NAME_ENTRY *e = X509_NAME_get_entry(issu, i);
+      OBJ_obj2txt(cert_key_buf, BUFFER_SIZE, X509_NAME_ENTRY_get_object(e), 0);
+	    const unsigned char *value = ASN1_STRING_get0_data(X509_NAME_ENTRY_get_data(e));
+      fprintf(stderr, "%s: %s\n", cert_key_buf, value);
+    }
+
+    fprintf(stderr, "\n");
+
+    free(cert_key_buf);
+
+    EVP_PKEY * pubkey; 
     pubkey = X509_get_pubkey (cert);
-    int key_type = EVP_PKEY_base_id(pubkey);
-    unsigned char* key_buf = NULL;
-    char *pem = NULL;
+    // int key_type = EVP_PKEY_base_id(pubkey);
+    // unsigned char* key_buf = NULL;
+    // char *pem = NULL;
     // pem = (char *) malloc(bio_in->num_write + 1);
     // PEM_write_bio_PUBKEY(bio_in, pubkey);
     if(!PEM_write_bio_PUBKEY(bio_out, pubkey))
@@ -199,7 +218,7 @@ void secure_connect(const char* hostname, const char *port) {
     // EVP_PKEY_print_public(bio_out, pubkey, 0, NULL);
 
     X509_free(cert);
-    free(key_buf);
+    // free(key_buf);
   } else {
     fprintf(stderr, "Certificate version: NONE\n\n");
   }
