@@ -88,6 +88,9 @@ void secure_connect(const char* hostname, const char *port) {
   ctx = SSL_CTX_new(ssl_method);
   if (NULL == ctx) report_and_exit("Error at SSL_CTX_new");
 
+  SSL_CTX_set_default_verify_paths(ctx);
+  SSL_CTX_set_options(ctx, SSL_OP_NO_TLSv1_3);
+
   SSL* ssl = NULL;
   
   BIO *bio_in = NULL, *bio_out = BIO_new_fp(stderr, BIO_NOCLOSE);
@@ -133,8 +136,6 @@ void secure_connect(const char* hostname, const char *port) {
   SSL_SESSION_get_master_key(session, mk_out, mk_len);
   fprintf(stderr, "%d\n", nk_nums);
 
-  //fprintf(stderr, "Master Key: %s\n", mk_out);
-
   fprintf(stderr, "Master Key: \n");
   int i;
   for (i=0; i<nk_nums; i++) {
@@ -144,19 +145,19 @@ void secure_connect(const char* hostname, const char *port) {
 
   // trying to print the supported ciphers
 
-  SSL_CIPHER *curr_cipher = NULL;
-  char *name;
+  // SSL_CIPHER *curr_cipher = NULL;
+  // char *name;
 
   fprintf(stderr, "Supported cipher suites:\n");
   STACK_OF(SSL_CIPHER) *ciphers = SSL_get1_supported_ciphers(ssl);
-  
+
   for (i = 0; i < sk_SSL_CIPHER_num(ciphers); i++) {
-    curr_cipher = sk_SSL_CIPHER_value(ciphers, i);
-    name = SSL_CIPHER_get_name(curr_cipher);
+    SSL_CIPHER *curr_cipher = sk_SSL_CIPHER_value(ciphers, i);
+    const char *name = SSL_CIPHER_get_name(curr_cipher);
     fprintf(stderr, "%s\n", name);
   }
 
-  char *current_cipher_name = SSL_get_cipher_name(ssl);
+  const char *current_cipher_name = SSL_get_cipher_name(ssl);
   fprintf(stderr, "Using cipher suite: %s\n\n", current_cipher_name);
 
   X509 *cert;
@@ -168,7 +169,8 @@ void secure_connect(const char* hostname, const char *port) {
     int version = ((int) X509_get_version(cert)) + 1;
     fprintf(stderr, "Certificate version: %d\n", version);
 
-    fprintf(stderr, "Certificate verification: %s\n", "yes");
+    long verify_flag = SSL_get_verify_result(ssl);
+    fprintf(stderr, "Certificate verification: %s\n", X509_verify_cert_error_string(verify_flag));
 
     ASN1_TIME *not_before = X509_get_notBefore(cert);
     ASN1_TIME *not_after = X509_get_notAfter(cert);
